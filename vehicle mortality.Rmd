@@ -1,0 +1,237 @@
+---
+title: "vehicle mortality"
+date: "5/30/2022"
+output: html_document
+---
+
+May 6th, 2022
+<center> <h1>Motor Vehicle Moralities</h1> </center>
+
+For this project, I decided to look at vehicle mortality in each state. Each state has its own laws and regulations when it comes to vehicle safety. Each state also has its own unique terrain and culture. I got the data from the CDCWonder Database and looked at all vehicle crash deaths from inside the vehicle. This data does not include pedestrians. In the figures below, average vehicle mortality is calculated for each age group in each state as well as overall mortality for each state. Those numbers are then multiplied by 1000000 so that we may view the numbers with ease as many of the numbers are quite small. 
+
+Before the project started, I thought that states with the biggest cities, such as New York, would have the highest vehicle mortality rates because there is such limited space for cars, causing them to be packed closely together. However, if we look at the table below, the state with the highest overall mortality is Mississippi, which is considered to be a rural state. In fact, the top 10 states are all fairly rural states. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(usmap)
+library(gtrendsR)
+library(plotly)
+library(huxtable)
+library(magrittr)
+library(rvest)
+```
+
+```{r include=FALSE}
+cars <- read_csv("C:/Users/siara/Desktop/vehicle/cars.csv")
+View(cars)
+
+cars<-cars%>%
+  select(-Notes, -`Ten-Year Age Groups`, -`State Code`)%>%
+  filter(!grepl('Unreliable', `Crude Rate`))%>%
+  mutate(mortality=Deaths/Population)%>%
+  rename(Age.Group=`Ten-Year Age Groups Code`)%>%
+  drop_na()
+
+cars<- cars%>%
+  select(-`Deaths`, -`Population`, -`Crude Rate`)
+cars
+
+overallmeancars<-cars%>%
+  group_by(State)%>%
+  summarize(mean_mortality=mean(mortality))
+overallmeancars
+
+meancars1<-cars%>%
+  pivot_wider(names_from=Age.Group, values_from=mortality)%>%
+  left_join(overallmeancars)%>%
+  rename(overall_mortality=`mean_mortality`)%>%
+  #mutate(fips=fips(`State`))%>%
+  mutate(`1`=`1`*1000000, `1-4`=`1-4`*1000000,`5-14`=`5-14`*1000000,`15-24`=`15-24`*1000000, `25-34`=`25-34`*1000000 , `35-44`=`35-44`*1000000,`45-54`=`45-54`*1000000, `55-64`=`55-64`*1000000, `65-74`=`65-74`*1000000, `75-84`=`75-84`*1000000, `85+`=`85+`*1000000, `overall_mortality`=`overall_mortality`*1000000)
+
+meancars1
+
+meancars<-meancars1%>%
+    rename("pop1"=`1`, "pop1to4"=`1-4`, "pop5to14"=`5-14`, "pop15to24"=`15-24`, "pop25to34"=`25-34`, "pop35to44"=`35-44`, "pop45to54"=`45-54`,"pop55to64"=`55-64`, "pop65to74"=`65-74`, "pop75to84"=`75-84`, "pop85plus"=`85+`)
+meancars
+
+meancars[order(-meancars$pop15to24),]
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, paged.print=TRUE}
+table<-hux(meancars1[order(-meancars1$overall_mortality),])%>%
+  add_colnames() %>% 
+  set_bold(row = 1, col = everywhere, value = TRUE) %>% 
+  set_all_borders(TRUE)
+table[-2,]
+```
+
+```{r include=FALSE}
+meancars$fips <-fips(meancars$State)
+meancars$fips
+
+p<-plot_usmap(data = meancars, values = "overall_mortality")+
+ scale_fill_continuous(low="#ADD8E6", high="#00008B",
+                       name = "mortality rate (multiplied by 1000000)", label = scales::comma
+  ) + 
+  theme(legend.position = "bottom") + 
+  theme(panel.background = element_rect(colour = "black")) + 
+  labs(title = "Vehicle Mortality Rate By State")
+p
+```
+
+I wanted to visualize the data as a choropleth, which we can see below. 
+
+```{r}
+ggplotly(p)
+```
+
+I thought about speeding laws and found that Idaho, Maine, North Dakota, South Dakota, Texas and Wyoming all have speed limits of 75-80 on certain highways. However, there doesn't seem to be much of a connection and it doesn't explain why Mississippi's vehicle mortality rate is so high.
+
+I researched a bit on state seatbelts and found that seatbelt laws are broken up into two categories: primary and secondary. Some states have primary seat belt laws where law enforcement can stop and fine vehicles passengers for not wearing a seatbelt. Other states have secondary seat belt laws where law enforcement cannot stop you solely because you aren’t wearing a seatbelt. I used data from the  Insurance Institute for Highway Safety (IIHS) to look at each state’s laws. However, I found that many of the states with the highest vehicle mortalities already had enacted primary seatbelt laws. This suggests that there is something else to consider here.
+
+```{r include=FALSE}
+url_data <- "https://www.iihs.org/topics/seat-belts/seat-belt-law-table"
+css_selector<-"#main-copy > div"
+
+seatbelt<-url_data %>% 
+  read_html() %>% 
+  html_element(css = css_selector)%>%
+  html_table()%>%
+  select("X1", "X3", "X4", "X5")%>%
+  na.omit()%>%
+  slice(-1)%>%
+  rename("State"="X1", "Primary Enforcement?"="X3", "Who is covered? In what seats?"="X4", "Maximum base fine 1st offense" ="X5")
+  
+
+seatbelt$`Primary Enforcement?`[startsWith(seatbelt$`Primary Enforcement?`, "yes") ]<-"yes"
+
+seatbelt$YesNo<-ifelse(seatbelt$`Primary Enforcement?`=="yes",1,0)
+
+
+seatbelt$`Maximum base fine 1st offense` <- sub('F.*', '', seatbelt$`Maximum base fine 1st offense`, perl=TRUE)
+
+
+
+seatbelt
+```
+
+```{r echo=TRUE}
+seatbelt$fips <-fips(seatbelt$State)
+seatbelt$fips
+
+plot_usmap(data = seatbelt, values = "YesNo")+
+ scale_fill_continuous(low="white", high="#00008B",
+                       name = "primary or secondary seatbelt law", label = scales::comma
+  ) + 
+  theme(legend.position = "bottom") + 
+  theme(panel.background = element_rect(colour = "black")) + 
+  labs(title = "Seatbelt Law by State")
+```
+
+
+I found some data on road conditions from the Office of Highway Policy Information and decided to look at the ratio of rural to urban roads per state. I decided to conduct a linear regression to see if percent rural road might have any connection to vehicle mortality rates. I also conducted a multi linear regression holding state seatbelt laws constant.
+
+```{r include=FALSE}
+url <- "https://www.fhwa.dot.gov/policyinformation/statistics/2020/hm60.cfm"
+css_selector<-"#fullpagewide > div.widetable > table"
+
+rural<-url %>% 
+  read_html() %>% 
+  html_element(css = css_selector)%>%
+  html_table()%>%
+  na.omit()
+
+names(rural) <- rural[1,]
+rural <- rural[-1,]
+
+rural <- rural[ c(1,9, 18) ]
+
+rural<-rural%>%
+ rename("State"="STATE", "Rural"="TOTAL", "Total"="TOTAL LANE MILES")
+
+
+rural$Rural<- as.numeric(gsub(",","",rural$Rural))
+rural$Total<- as.numeric(gsub(",","",rural$Total))
+
+rural<-rural%>%
+  mutate(percent_rural=(Rural/Total)*100)
+
+
+
+rural
+
+rural_mean<-merge(rural, meancars, by="State", all.x=TRUE)
+rural_mean
+
+
+```
+
+```{r}
+mort_rural <- lm( overall_mortality~ percent_rural, data = rural_mean)
+mort_rural
+```
+
+The first coefficient, -4.7, is the y-intercept or what the mortality would be if the percent rural was 0. The second coefficient, 0.43, is the slope or what the increase in mortality would be for each additional increase in percent rural. According to this model, the mortality would increase by 0.43 for each 1 percent increase in rural roads.
+
+```{r}
+ggplot(rural_mean, aes(x = percent_rural, y = overall_mortality)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+If we look back at the table, the data point that just about at 80 on the y-axis is Mississippi.
+
+```{r}
+confint(mort_rural)
+```
+
+We can say with 95% confidence that the true value of the slope is between 0.24 and 0.62 per 1 percent increase in rural roads out of total roads. This means that the percentage of rural roads is a significant predictor of vehicle mortality.
+
+```{r}
+summary(mort_rural)$r.squared
+```
+31% of the variation in vehicle mortality can be explained by state's rural road percentage.
+
+
+```{r include=FALSE}
+rural_mean$fips <-fips(rural_mean$State)
+rural_mean$fips
+
+rural_mean_seatbelt<-merge(rural_mean, seatbelt, by="fips", all.x=TRUE)
+
+rural_mean_seatbelt
+```
+
+
+```{r}
+mlr<- lm(overall_mortality~ percent_rural +YesNo, data=rural_mean_seatbelt)
+mlr
+```
+
+```{r}
+coef(mlr)
+```
+
+```{r}
+confint(mlr)
+```
+
+Controlling for seatbelt laws, the vehicle mortality rate for states is 0.46 times higher each time the percent of rural roads increases by one (95% CI: 0.26 - 0.65)
+
+In the SLR model, th coefficient for rural roads percent is 0.43, while in this model (MLR) the coefficient is 0.46, which is higher This is because predictor variables, such as seatbelt laws are correlated and only looking at one of them at a time can hide the true association. This is also called confounding.
+
+```{r}
+plot(mlr, which = 1)
+```
+
+The plot (the red line) deviates from the straight line at y=0. The red line is more curved, which suggests that the higher exponents of x (cubic, quadratic, etc) might fit this data better than a linear regression.
+
+In conclusion, the analysis suggests that something about rural roads leads to higher vehicle moralities on average. My hypothesis about states with more urban areas having higher vehicle moralities was wrong and the opposite it true instead. However, only roughly 30% of the mortality rates can be explained by this, so there is more going on here. We can still brainstorm some recommendations based off of this. I suggest that speed limits be lowered and enforced on rural roads considering that the wide open road might not have many cars on the road which may lead to drivers speeding more and crashing at higher speeds. I would also suggest that more public transit infrastructure be developed in rural areas. One of the biggest differences between urban and rural areas is that urban areas are close together and often have public transport. This is a costly investment and may not be possible for all states. 
